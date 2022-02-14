@@ -8,7 +8,7 @@
 ; Compilador:  pic-as (v2.30), MPLABX v5.40
 ;
 ; Programa: Contador binario de 4 bits utilizando push-buttons e interrupciones
-; Hardware: 
+; Hardware: Leds y resistencias en el puerto A, pushbuttons en el puerto B.
 ;
 ; Creado: 7/02/22
 ; Última modificación: 7/02/22
@@ -40,17 +40,71 @@ PROCESSOR 16F887
 ;-------------------------------------------------------------------------------
   
 #include <xc.inc>
-
+  
+;-------------------------------------------------------------------------------
+;Variables
+;-------------------------------------------------------------------------------
+  
+PSECT udata_shr ; Variables en la memoria RAM compartida entre bancos
+    counter: DS 1 ;1 byte reservado (variable para aumentar la cantidad de ciclos del TIMER0)
+    W_TEMP: DS 1 ; 1 byte reservado (W Temporal)
+    STATUS_TEMP: DS 1 ; 1 byte reservado (STATUS Temporal)
+    
 ;-------------------------------------------------------------------------------
 ;Vector Reset
 ;-------------------------------------------------------------------------------
 
 PSECT VectorReset, class = CODE, abs, delta = 2 ; delta = 2: Las instrucciones necesitan 2 localidades para ejecutarse & abs = absolute: indicamos que contamos a partir de 0x0000
-ORG 0x0000  ; la localidad del vector reset es 0x0000
+ORG 00h  ; la localidad del vector reset es 0x0000
  
 VectorReset:
     PAGESEL main
     GOTO main
+;-------------------------------------------------------------------------------
+;Vector de interrupción
+;-------------------------------------------------------------------------------
+ORG 04h	    ; posición 0004h para las interrupciones
+push:
+    MOVWF W_TEMP
+    SWAPF STATUS, W
+    MOVWF STATUS_TEMP
+isr:
+    btfsc   RBIF
+    call int_iocb
+    call push_limit_check
+pop:
+    SWAPF STATUS_TEMP, W
+    MOVWF STATUS
+    SWAPF W_TEMP, F
+    SWAPF W_TEMP, W
+    retfie
+;-------------------------------------------------------------------------------
+;Subrutinas de interrupción
+;-------------------------------------------------------------------------------
+int_iocb:
+    banksel PORTB
+    btfss PORTB, 0
+    incf PORTA
+    btfss PORTB, 1
+    decf PORTA
+    BCF RBIF
+    return
+    
+push_limit_check:
+    BTFSS PORTA, 4	    ;chequeamos si el quinto bit de PORTD está en 1
+    goto $+11                ;NO: salimos de la subrutina
+    BTFSS PORTA, 7	    ;SÍ, chequeamos si el octavo bit de PORTD está en 1
+    goto $+2		    ;NO: Limpiamos el puerto 
+    goto $+3                ;SÍ: Limpiamos el puerto y seteamos el nibble low
+    CLRF PORTA		    
+    goto $+6 
+    CLRF PORTA		    
+    BSF PORTA, 0
+    BSF PORTA, 1
+    BSF PORTA, 2
+    BSF PORTA, 3
+    
+    return
 
 ;-------------------------------------------------------------------------------
 ;Tabla para display de siete segmentos
@@ -86,5 +140,65 @@ table:
 ;main (configuración)
 ;-------------------------------------------------------------------------------
 
- main:	
+main:			    
+    call config_ports
+    call config_clock
+    call config_iocrb
+    call config_int_enable
+    banksel PORTA
+    
+;-------------------------------------------------------------------------------
+;Loop
+;-------------------------------------------------------------------------------
+
+loop:
+    
+    goto loop
+;-------------------------------------------------------------------------------
+;subrutinas
+;-------------------------------------------------------------------------------
+config_iocrb:
+    banksel TRISA
+    BSF IOCB, 0
+    BSF IOCB, 1	    ; seteamos los bits 0 y 1 del puerto B como interrupt on change
+    
+    banksel PORTA
+    MOVF PORTB, W   ; Al leer termina condición de mismatch
+    BCF RBIF
+    
+    return
+config_ports:
+    
+    banksel ANSEL       ; banco 11
+    CLRF ANSEL		; pines digitales
+    CLRF ANSELH
+    
+    banksel TRISA       ; banco 01
+    CLRF TRISA		; PORTA como salida
+    
+    BSF  TRISB0
+    BSF  TRISB1         ; pines 1 & 2 del puerto B como entradas
+    
+    BCF OPTION_REG, 7	;Habilitar Pull-ups
+    
+    banksel PORTA       ; banco 00
+    CLRF PORTA		; limpiamos PORTA
+    return
+    
+config_clock:
+    banksel OSCCON      ;banco 01
+    BSF IRCF2
+    BSF IRCF1
+    BCF IRCF0           ; IRCF <2:0> -> 110  4MHz
+    
+    BSF SCS             ;reloj interno
+    
+    return
+
+config_int_enable:
+    BSF GIE ; INTCON
+    BSF RBIE
+    BCF RBIF
+    
+    return
 END
