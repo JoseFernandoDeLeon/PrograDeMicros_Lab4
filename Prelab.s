@@ -7,7 +7,7 @@
 ; Autor: José Fernando de León González
 ; Compilador:  pic-as (v2.30), MPLABX v5.40
 ;
-; Programa: Contador binario de 4 bits utilizando push-buttons e interrupciones
+; Programa: Contador binario de 4 bits utilizando push-buttons e interrupciones 
 ; Hardware: Leds y resistencias en el puerto A, pushbuttons en el puerto B.
 ;
 ; Creado: 7/02/22
